@@ -41,17 +41,17 @@ def run_experiments():
     for name, original_circuit in benchmarks.items():
 
         # Apply our optimizer
-        scheduled_circuit = schedule_independent_gates(
-            original_circuit
-        )
-
         commutation_circuit = cancel_with_commutation(
-            scheduled_circuit
+            original_circuit
         )
 
         optimized_circuit = cancel_inverse_gates(
             commutation_circuit
         )
+
+        scheduled_circuit = schedule_independent_gates(
+            optimized_circuit
+        )  
 
         # Apply Qiskit's optimizer
         qiskit_circuit = optimize_with_qiskit(
