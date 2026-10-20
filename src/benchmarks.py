@@ -1,111 +1,95 @@
-from qiskit import QuantumCircuit
+import re
+from pathlib import Path
+
+from qiskit import qasm2
 
 
-def create_benchmark_circuit():
+# Folder that holds the input circuit files (outside src)
+TEST_CIRCUITS_DIR = Path(__file__).resolve().parent.parent / "test_circuits"
+
+# File types that load_circuit() can read
+SUPPORTED_EXTENSIONS = [".qasm"]
+
+
+def _natural_sort_key(name):
     """
-    Original mixed benchmark circuit.
+    Sort "circuit_2" before "circuit_10" (normal sorting would not).
     """
 
-    circuit = QuantumCircuit(3)
+    return [
+        int(part) if part.isdigit() else part.lower()
+        for part in re.split(r"(\d+)", name)
+    ]
 
-    # Adjacent cancellation
-    circuit.h(0)
-    circuit.h(0)
 
-    # Commutation cancellation
-    circuit.x(1)
-    circuit.h(0)
-    circuit.h(0)
+def get_all_circuit_names():
+    """
+    Return the names (with extension) of every circuit file in the
+    test_circuits folder, for example:
+        ["circuit_1.qasm", "circuit_2.qasm", ...]
 
-    # Non-cancellable pattern
-    circuit.h(2)
-    circuit.x(2)
-    circuit.h(2)
+    Any number of circuits is supported: just add a new file to the folder.
+    """
 
-    # Two-qubit gates
-    circuit.cx(0, 1)
-    circuit.cx(1, 2)
+    if not TEST_CIRCUITS_DIR.exists():
+        raise FileNotFoundError(
+            f"Circuit folder not found: {TEST_CIRCUITS_DIR}"
+        )
 
-    # T and T-dagger cancellation
-    circuit.t(0)
-    circuit.tdg(0)
+    names = [
+        path.name
+        for path in TEST_CIRCUITS_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+    ]
 
-    # SWAP gate
-    circuit.swap(1, 2)
+    return sorted(names, key=_natural_sort_key)
+
+
+def load_circuit(circuit_name):
+    """
+    Create a circuit from a file in the test_circuits folder.
+
+    circuit_name must include the extension, for example:
+        "circuit_1.qasm"
+
+    Supported format:
+        .qasm  ->  OpenQASM 2.0 circuit description
+    """
+
+    circuit_path = TEST_CIRCUITS_DIR / circuit_name
+
+    if not circuit_path.exists():
+        raise FileNotFoundError(
+            f"Circuit file not found: {circuit_path}"
+        )
+
+    extension = circuit_path.suffix.lower()
+
+    if extension == ".qasm":
+        # LEGACY_CUSTOM_INSTRUCTIONS adds gates such as swap that are
+        # not in the strict OpenQASM 2.0 qelib1.inc library
+        circuit = qasm2.load(
+            str(circuit_path),
+            custom_instructions=qasm2.LEGACY_CUSTOM_INSTRUCTIONS,
+        )
+    else:
+        raise ValueError(
+            f"Unsupported circuit file type '{extension}' "
+            f"for {circuit_name}. Use a .qasm file."
+        )
 
     return circuit
 
-
-def create_adjacent_cancellation_circuit():
-    """
-    Benchmark with adjacent cancellable gates.
-    """
-
-    circuit = QuantumCircuit(2)
-
-    circuit.h(0)
-    circuit.h(0)
-
-    circuit.x(1)
-    circuit.x(1)
-
-    return circuit
-
-
-def create_commutation_circuit():
-    """
-    Benchmark with gates separated by operations
-    on a different qubit.
-    """
-
-    circuit = QuantumCircuit(2)
-
-    circuit.h(0)
-    circuit.x(1)
-    circuit.h(0)
-
-    return circuit
-
-
-def create_inverse_gate_circuit():
-    """
-    Benchmark with inverse gate pairs.
-    """
-
-    circuit = QuantumCircuit(2)
-
-    circuit.t(0)
-    circuit.tdg(0)
-
-    circuit.s(1)
-    circuit.sdg(1)
-
-    return circuit
-
-
-def create_two_qubit_circuit():
-    """
-    Benchmark containing two-qubit gates.
-    """
-
-    circuit = QuantumCircuit(3)
-
-    circuit.cx(0, 1)
-    circuit.cx(0, 1)
-
-    circuit.swap(1, 2)
-
-    return circuit
 
 def get_all_benchmarks():
     """
-    Return all benchmark circuits.
+    Load every circuit in the test_circuits folder.
+
+    Returns a dictionary {circuit_name: circuit}, e.g.
+        {"circuit_1.qasm": <QuantumCircuit>, ...}
     """
 
     return {
-        "mixed": create_benchmark_circuit(),
-        "adjacent": create_adjacent_cancellation_circuit(),
-        "commutation": create_commutation_circuit(),
-        "inverse_gates": create_inverse_gate_circuit(),
-        "two_qubit": create_two_qubit_circuit(),
+        name: load_circuit(name)
+        for name in get_all_circuit_names()
     }

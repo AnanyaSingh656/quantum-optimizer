@@ -1,34 +1,66 @@
+from pathlib import Path
 
-from .benchmarks import get_all_benchmarks
-from .optimizer import cancel_with_commutation, cancel_inverse_gates
+from .benchmarks import get_all_circuit_names, load_circuit
+from .optimizer import optimize_circuit
 from .metrics import calculate_metrics
 from .qiskit_baseline import optimize_with_qiskit
+from .verify import check_equivalence
 
 
-def get_benchmark_results(benchmark_name="mixed"):
-    """Return JSON-compatible metrics for one benchmark."""
+def _find_circuit_name(benchmark_name):
+    """
+    Accept "circuit_1.qasm" or just "circuit_1" and return the file name,
+    or None if no such circuit exists in test_circuits.
+    """
 
-    benchmarks = get_all_benchmarks()
+    available = get_all_circuit_names()
 
-    if benchmark_name not in benchmarks:
+    if benchmark_name in available:
+        return benchmark_name
+
+    for name in available:
+        if Path(name).stem == benchmark_name:
+            return name
+
+    return None
+
+
+def get_benchmark_results(benchmark_name="circuit_1.qasm"):
+    """Return JSON-compatible metrics for one circuit in test_circuits."""
+
+    circuit_name = _find_circuit_name(benchmark_name)
+
+    if circuit_name is None:
         return {
             "status": "error",
             "message": f"Unknown benchmark: {benchmark_name}",
-            "available_benchmarks": list(benchmarks.keys()),
+            "available_benchmarks": get_all_circuit_names(),
         }
 
-    original = benchmarks[benchmark_name]
+    original = load_circuit(circuit_name)
 
-    commutation_result = cancel_with_commutation(original)
-    optimized = cancel_inverse_gates(commutation_result)
+    optimized, rounds = optimize_circuit(original)
     qiskit_optimized = optimize_with_qiskit(original)
+
+    check = check_equivalence(original, optimized)
 
     return {
         "status": "success",
-        "benchmark": benchmark_name,
+        "benchmark": circuit_name,
+        "rounds": rounds,
+        "equivalent": check["equivalent"],
         "results": {
             "original": calculate_metrics(original),
             "optimized": calculate_metrics(optimized),
             "qiskit": calculate_metrics(qiskit_optimized),
         },
     }
+
+
+def get_all_benchmark_results():
+    """Return the results for every circuit in test_circuits."""
+
+    return [
+        get_benchmark_results(name)
+        for name in get_all_circuit_names()
+    ]
